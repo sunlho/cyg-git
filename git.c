@@ -1,27 +1,52 @@
-/* A proxy for Cygwin's git:
- * this invokes C:/cygwin64/bin/bash -c 'git-wrapper "%1" "%2" "%3"...'
- * 
- * How to build: x86_64-w64-mingw32-gcc -o git git.c
- */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <windows.h>
+
+// Helper: escape and quote a string
+void quote_arg(char *dst, const char *src)
+{
+    strcat(dst, " \"");
+    strcat(dst, src);
+    strcat(dst, "\"");
+}
+
+// Converts Unix path (e.g. /cygdrive/c/foo) to Windows path (e.g. C:\foo)
+void cygwin_to_win_path(const char *src, char *dst, int dst_len)
+{
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "cygpath -w \"%s\"", src);
+    FILE *fp = _popen(cmd, "r");
+    if (fp)
+    {
+        fgets(dst, dst_len, fp);
+        // remove trailing newline
+        dst[strcspn(dst, "\r\n")] = 0;
+        _pclose(fp);
+    }
+    else
+    {
+        strncpy(dst, src, dst_len);
+    }
+}
 
 int main(int argc, char **argv)
 {
-    char buf[4000] = "C:/cygwin64/bin/sh -c 'git-wrapper";
-    int rest = sizeof(buf) - strlen(buf) - 2; /* 2 for "'\0" */
+    char cmd[8192] = "C:/cygwin64/bin/git.exe ";
+    char converted[1024];
 
-    for (int i = 1; i < argc; i++) {
-        rest -= strlen(argv[i]) + 3; /* 3 for " \"\"" */
-        if (rest < 0) {
-            fprintf(stderr, "arguments too long\n");
-            return 1;
+    for (int i = 1; i < argc; ++i)
+    {
+        if (argv[i][0] != '-')
+        {
+            cygwin_to_win_path(argv[i], converted, sizeof(converted));
+            quote_arg(cmd, converted);
         }
-        strcat(buf, " \"");
-        strcat(buf, argv[i]);
-        strcat(buf, "\"");
+        else
+        {
+            quote_arg(cmd, argv[i]);
+        }
     }
-    strcat(buf, "'");
-    return system(buf);
+
+    return system(cmd);
 }
