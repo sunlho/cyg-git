@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
+#include "config.h"
 
-// Helper: escape and quote a string
 void quote_arg(char *dst, const char *src)
 {
     strcat(dst, " \"");
@@ -11,18 +11,16 @@ void quote_arg(char *dst, const char *src)
     strcat(dst, "\"");
 }
 
-// Converts Unix path (e.g. /cygdrive/c/foo) to Windows path (e.g. C:\foo)
-void cygwin_to_win_path(const char *src, char *dst, int dst_len)
+void cygwin_to_win_path_env(const char *src, char *dst, int dst_len, const char *cyg_prefix)
 {
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "cygpath -w \"%s\"", src);
-    FILE *fp = _popen(cmd, "r");
-    if (fp)
+    size_t prefix_len = strlen(cyg_prefix);
+
+    if (strncmp(src, cyg_prefix, prefix_len) == 0 && strlen(src) >= prefix_len + 2)
     {
-        fgets(dst, dst_len, fp);
-        // remove trailing newline
-        dst[strcspn(dst, "\r\n")] = 0;
-        _pclose(fp);
+        snprintf(dst, dst_len, "%c:%s", src[prefix_len], src + prefix_len + 1);
+        for (char *p = dst; *p; ++p)
+            if (*p == '/')
+                *p = '\\';
     }
     else
     {
@@ -32,14 +30,25 @@ void cygwin_to_win_path(const char *src, char *dst, int dst_len)
 
 int main(int argc, char **argv)
 {
-    char cmd[8192] = "C:/cygwin64/bin/git.exe ";
+    SetConsoleOutputCP(CP_UTF8);
+
+    const char *git_path = getenv("CYGWIN_GIT_BIN");
+    if (!git_path)
+        git_path = DEFAULT_CYGWIN_GIT_BIN;
+
+    const char *cyg_prefix = getenv("CYGWIN_PREFIX");
+    if (!cyg_prefix)
+        cyg_prefix = DEFAULT_CYGWIN_PREFIX;
+
+    char cmd[8192];
+    strcpy(cmd, git_path);
     char converted[1024];
 
     for (int i = 1; i < argc; ++i)
     {
         if (argv[i][0] != '-')
         {
-            cygwin_to_win_path(argv[i], converted, sizeof(converted));
+            cygwin_to_win_path_env(argv[i], converted, sizeof(converted), cyg_prefix);
             quote_arg(cmd, converted);
         }
         else
