@@ -44,10 +44,16 @@ int main(int argc, char **argv)
     strcpy(cmd, git_path);
     char converted[1024];
 
+    unsigned int wrap_output = 0;
+
     for (int i = 1; i < argc; ++i)
     {
         if (argv[i][0] != '-')
         {
+            if (!strcmp(argv[i], "rev-parse"))
+            {
+                wrap_output = 1;
+            }
             cygwin_to_win_path_env(argv[i], converted, sizeof(converted), cyg_prefix);
             quote_arg(cmd, converted);
         }
@@ -57,5 +63,43 @@ int main(int argc, char **argv)
         }
     }
 
-    return system(cmd);
+    if (wrap_output)
+    {
+        FILE *fp = _popen(cmd, "r");
+        if (!fp)
+        {
+            fprintf(stderr, "git command failed\n");
+            return 1;
+        }
+
+        char result[1024];
+        if (fgets(result, sizeof(result), fp))
+        {
+            size_t len = strlen(result);
+            if (len > 0 && result[len - 1] == '\n')
+                result[len - 1] = '\0';
+
+            if (result[0] == '\0')
+            {
+                // nothing to print
+            }
+            else if (result[0] == '-')
+            {
+                printf("%s\n", result);
+            }
+            else
+            {
+                char win_path[1024];
+                cygwin_to_win_path_env(result, win_path, sizeof(win_path), cyg_prefix);
+                printf("%s\n", win_path);
+            }
+        }
+
+        int status = _pclose(fp);
+        return status;
+    }
+    else
+    {
+        return system(cmd);
+    }
 }
